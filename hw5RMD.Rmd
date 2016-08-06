@@ -1,0 +1,326 @@
+---
+title: ''
+output: word_document
+---
+
+\begin{center}
+\textbf{Financial Data Mining\\
+Homework 5\\
+Yen-Hsiu Chang}
+\end{center}
+
+Computer:
+
+3. Local method: kernel smoothing
+
+```{r,message=F,cache=T}
+library(glmnet)
+setwd("C:/Users/Chang Yen-hsiu/Desktop/Third Semester/Financial Data Mining/Homework")
+rm(list=ls())
+load("hw3.RData")
+x.train <- rbind(train2,train3,train8)
+mu.hat <- apply(x.train,2,mean)
+x.train <- x.train - rep(1,nrow(x.train))%*%t(mu.hat) # center data
+x.test <- rbind(test2,test3,test8)
+x.test <- x.test- rep(1,nrow(x.test))%*%t(mu.hat)
+n2 <- nrow(train2) ;n3 <- nrow(train3) ;n8 <- nrow(train8)
+y.train <- as.factor(c(rep(1,n2),rep(2,n3),rep(3,n8)))
+train <- data.frame(y=y.train,x=x.train) # train data
+N2 <- nrow(test2) ;N3 <- nrow(test3) ;N8 <- nrow(test8)
+y.test <- as.factor(c(rep(1,N2),rep(2,N3),rep(3,N8)))
+test <- data.frame(y=y.test,x=x.test) # test data
+```
+
+```{r,message=F,cache=T,eval=F}
+library(kernlab)
+library(gplm)
+library(lfda)
+## Tricube Kernel Function
+kernel.function <- function(sigma){
+   rval <- function(x, y = NULL) {
+        if (!is(x, "vector")) 
+            stop("x must be a vector")
+        if (!is(y, "vector") && !is.null(y)) 
+            stop("y must a vector")
+        if (is(x, "vector") && is.null(y)) {
+            return(1)
+        }
+        if (is(x, "vector") && is(y, "vector")) {
+            if (!length(x) == length(y)) 
+                stop("number of dimension must be the same on both data points")
+            return(((1 - (sqrt(t(x)%*%y)/lambda)^3))^3* ((1 -
+                    (sqrt(t(x)%*%y)/lambda)^3)>= 0))
+        }
+    }
+    return(new("rbfkernel", .Data = rval, kpar = list(sigma = sigma)))
+}
+kernel_1.2 <- kernel.function(1.2)
+kernel.matrix_1.2 <- kernelMatrix(kernel=kernel_1.2,x=x.train)
+
+fda.kernel <- klfda(kernel.matrix_1.2, as.numeric(y.train)-2, 2, metric = c("weighted"))
+# xx <- kmatrixGauss(x.train, sigma = 1)
+# fda.kernel <- klfda(xx, y.train, 2, metric = c("weighted"))
+
+plot(fda.kernel$Z[,1],fda.kernel$Z[,2],col=as.numeric(y.train)+1,
+     pch=as.numeric(y.train)+1,xlab="1st Principal Component",
+     ylab="2nd Principal Component", main="local FDA")
+plot(ff[,1],ff[,2],col=as.numeric(y.train)+1,
+     pch=as.numeric(y.train)+1,xlab="1st Principal Component",
+     ylab="2nd Principal Component", main="local FDA")
+ff <- cbind(fst.score.fda,snd.score.fda)
+ff <- ff[-which(abs(ff[,1])<0.02),]
+ff <- ff[-which(abs(ff[,2])<0.02),]
+```
+
+4. SVM
+
+```{r,message=F,cache=T,eval=F}
+library(e1071)
+# Support Vector Classifier
+set.seed(1)
+tune.out <- tune(svm, y~.,data=train, kernel="linear",
+                  ranges=list(cost=c(0.001, 0.01, 0.1, 1,5,10,100)))
+summary(tune.out) 
+# train and test error
+svc.train.err <- mean(predict(tune.out$best.model,train)!=y.train)
+#[1] 0.009321595
+svc.test.err <-mean(predict(tune.out$best.model,test)!=y.test)
+#[1] 0.06226415
+# SVM with the radial basis kernel
+set.seed(1)
+tune.radial <- tune(svm, y~.,data=train, kernel="radial",
+                  ranges=list(cost=c(10^(0:3)),
+                              gamma=c(10^(-5:-2))))
+summary(tune.radial)
+# svm.fit <- svm(y~.,data=train,kernel="radial",cost=10,gamma=0.001)
+# train and test error
+svm.r.train.err <-mean(train[,"y"]!=predict(tune.radial$best.model))
+#[1] 0.001035733
+svm.r.test.err <- mean(test[,"y"]!=predict(tune.radial$best.model,newdata=test)) 
+#[1] 0.04528302
+# SVM with polynomial kernel
+set.seed(1)
+tune.poly=tune(svm, y~.,data=train, kernel="polynomial",
+                  ranges=list(cost=c(10^(0:2)),degree=c(2,3,4)))
+summary(tune.poly)
+# train and test error
+svm.p.train.err <- mean(train[,"y"]!=predict(tune.poly$best.model)) 
+#[1] 0
+svm.p.test.err <- mean(test[,"y"]!=predict(tune.poly$best.model,newdata=test))
+#[1] 0.03773585
+
+error.table <- rbind(c(svc.train.err,svc.test.err),c(svm.r.train.err,svm.r.test.err),c(svm.p.train.err,svm.p.test.err))
+colnames(error.table) <- c("Train errors","Test errors")
+rownames(error.table) <- c("support vector classifier"," SVM with the radial"," SVM with polynomial ")
+error.table
+```
+
+Please see tha table.
+
+5. Kernel PCA
+
+```{r,message=F,cache=T,eval=F}
+library(kernlab)
+## PCA
+x.svd <- svd(x.train)
+plot(x.train%*%x.svd$v[,1],x.train%*%x.svd$v[,2],col=as.numeric(y.train)+1,
+     pch=as.numeric(y.train)+1,xlab="1st Principal Component",
+     ylab="2nd Principal Component",main="PCA")
+## FDA
+# compute mean estimate: overall and group means
+n <- n2+n3+n8
+mu.hat <- apply(x.train,2,mean)
+mu.1.hat <- apply(x.train[1:n2,],2,mean)
+mu.2.hat <- apply(x.train[(n2+1):(n2+n3),],2,mean)
+mu.3.hat <- apply(x.train[(n2+n3+1):n,],2,mean)
+
+# between class covariance
+S.b <- ((n2)*(mu.1.hat-mu.hat)%*%t(mu.1.hat-mu.hat)+
+       (n3)*(mu.2.hat-mu.hat)%*%t(mu.2.hat-mu.hat)+
+       (n8)*(mu.3.hat-mu.hat)%*%t(mu.3.hat-mu.hat))/(n-1)
+# within class covariance
+S.w <- (t(x.train[1:n2,] - rep(1,n2)%*% t(mu.1.hat)) %*% (x.train[1:n2,] - rep(1,n2)%*% t(mu.1.hat)) +
+       t(x.train[(n2+1):(n2+n3),] - rep(1,n3)%*% t(mu.2.hat)) %*% (x.train[(n2+1):(n2+n3),] - rep(1,n3)%*% t(mu.2.hat)) +
+         t(x.train[(n2+n3+1):n,] - rep(1,n8)%*% t(mu.3.hat)) %*% (x.train[(n2+n3+1):n,] - rep(1,n8)%*% t(mu.3.hat)))/(n-3)
+# total variance
+S.t <- t(x.train - rep(1,n)%*% t(mu.hat)) %*% (x.train - rep(1,n)%*% t(mu.hat))
+
+# define relative matrix
+S <- solve(S.w) %*% S.b
+# eigen decomp. of S
+S.eig <- eigen(S)
+
+# retain the leading two scores
+fst.score.fda <- x.train %*% Re(S.eig$vectors[,1])
+snd.score.fda <- x.train %*% Re(S.eig$vectors[,2])
+
+# Plot FDA two scores
+plot(fst.score.fda,snd.score.fda,col=as.numeric(y.train)+1,
+     pch=as.numeric(y.train)+1,xlab="1st Principal Component",
+     ylab="2nd Principal Component", main="FDA")
+
+## Kernel PCA
+# choice of sigma for the Radial Basis kernel
+par(mfrow=c(3,2))
+sigma.list <- c(0.001,0.005,.01,.1,.125,.15)
+for(sigma in sigma.list){
+  kpc <- kpca(x.train,kernel="rbfdot", kpar=list(sigma=sigma),features=2)
+  plot(rotated(kpc),col=as.numeric(y.train)+1,pch=as.numeric(y.train)+1,
+       xlab="1st Principal Component",ylab="2nd Principal Component",
+       main=paste("sigma=",sigma,sep=""))
+}
+par(mfrow=c(1,1))
+# Choose the best parameter with the least overlap, sigma=0.01
+# kernel PCA
+kpc <- kpca(x.train,kernel="rbfdot", kpar=list(sigma=0.01),features=2)
+#plot kernel PC scores
+par(mfrow=c(1,3))
+plot(rotated(kpc),col=as.numeric(y.train)+1,pch=as.numeric(y.train)+1,
+     xlab="1st Principal Component", ylab="2nd Principal Component",
+     main="Kernel PCA")
+plot(x.train%*%x.svd$v[,1],x.train%*%x.svd$v[,2],col=as.numeric(y.train)+1,
+     pch=as.numeric(y.train)+1,xlab="1st Principal Component",
+     ylab="2nd Principal Component",main="PCA")
+plot(fst.score.fda,snd.score.fda,col=as.numeric(y.train)+1,
+     pch=as.numeric(y.train)+1,xlab="1st Principal Component",
+     ylab="2nd Principal Component", main="FDA")
+par(mfrow=c(1,1))
+```
+
+6. RF
+
+```{r,message=F,cache=T,eval=F}
+library(randomForest)
+set.seed(1)
+nfolds <- 5
+n.train <- nrow(train)
+s <- split(sample(n.train),rep(1:nfolds,length=n.train))
+random.cv.err <- rep(NA,20)
+random.train.err <- rep(NA,20)
+random.test.err <- rep(NA,20)
+m <- 8:27
+# CV errors
+for(i in 1:20){
+  random.pred <- rep(NA,n.train) 
+  for(j in seq(nfolds)){
+  random.temp <- randomForest(y~.,data=train[-s[[j]],],mtry=m[i]
+                              ,importance=TRUE)
+  random.pred[s[[j]]] <- predict(random.temp,newdata=train[s[[j]],])
+  }
+  random.cv.err[i] <- mean(random.pred!=train[,"y"])
+}
+# train and test errors
+for(i in 1:20){
+  random.temp <- randomForest(y~.,data=train,mtry=m[i],importance=TRUE)
+  random.pred.train <- predict(random.temp)
+  random.pred.test <-  predict(random.temp,newdata=test)
+  random.train.err[i] <- mean(random.pred.train!=train[,"y"])
+  random.test.err[i] <- mean(random.pred.test!=test[,"y"])
+}
+# Plot
+plot(8:27,random.cv.err,pch=19,col=2,ylim=c(0.01,0.1),ylab="Errors",xlab="m",
+     main="Random Forest")
+points(8:27,random.train.err,pch=19,col=3)
+points(8:27,random.test.err,pch=19,col=4)
+legend("topright",legend=c("CV error","train error","test error"),
+       col=c(2:4),lty=1,lwd=2,cex=.8)
+# training and test errors with the best m
+random.train.err[which.min(random.cv.err)] #[1] 0.02537545
+random.test.err[which.min(random.cv.err)] #[1] 0.06037736
+```
+
+According to CV errors, the best m is 14. Training and test errors with the best m are 0.02537545 and 0.06037736, respectively.
+
+7. Boosting
+
+```{r,message=F,cache=T,eval=F}
+# library(gbm)
+# set.seed(1)
+# nfolds <- 5
+# n.train <- nrow(train)
+# s <- split(sample(n.train),rep(1:nfolds,length=n.train))
+# boost.cv.err <- rep(NA,10)
+# boost.train.err <- rep(NA,10)
+# boost.test.err <- rep(NA,10)
+# n.tree <- seq(1000,3000,length=5)
+# for(i in 1:5){
+#   boost.pred <- rep(NA,n.train) 
+#   for(j in seq(nfolds)){
+#   boost.temp <- gbm(y~.,data=train[-s[[j]],],distribution="multinomial"
+#                     ,n.trees=n.tree[i],interaction.depth=4)
+#   boost.pred[s[[j]]] <- apply(predict(boost.temp,newdata=train[s[[j]],],
+#                                 n.trees=n.tree[i],type="response"),1,which.max)
+#   }
+#   boost.cv.err[i] <- mean(boost.pred!=train[,"y"])
+# }
+# 
+# # train and test errors
+# for(i in 1:5){
+#   boost.temp <- gbm(y~.,data=train,distribution="multinomial",n.trees=n.tree[i],
+#                     interaction.depth=4)
+#   boost.pred.train <- apply(predict(boost.temp,n.trees=n.tree[i]
+#                                     ,type="response"),1,which.max)
+#   boost.pred.test <-  apply(predict(boost.temp,newdata=test,n.trees=n.tree[i]
+#                                     ,type="response"),1,which.max)
+#   boost.train.err[i] <- mean(boost.pred.train!=train[,"y"])
+#   boost.test.err[i] <- mean(boost.pred.test!=test[,"y"])
+# }
+# 
+# # Plot
+# plot(n.tree,boost.cv.err,pch=19,col=2,ylim=c(0.01,0.2),ylab="Errors",
+#      xlab="m",main="Boosting")
+# points(n.tree,boost.train.err,pch=19,col=3)
+# points(n.tree,boost.test.err,pch=19,col=4)
+# legend("topright",legend=c("CV error","train error","test error"),
+#        col=c(2:4),lty=1,lwd=2,cex=.8)
+
+##################### adabag #############################
+library(adabag)
+set.seed(1)
+nfolds <- 5
+n.train <- nrow(train)
+s <- split(sample(n.train),rep(1:nfolds,length=n.train))
+boost.cv.err <- rep(NA,5)
+boost.train.err <- rep(NA,5)
+boost.test.err <- rep(NA,5)
+n.trees <- seq(50,150,length=5)
+for(i in 1:5){
+  boost.pred <- rep(NA,n.train) 
+  for(j in seq(nfolds)){
+  boost.temp <- boosting(y~.,data=train[-s[[j]],],mfinal=n.trees[i])
+  boost.pred[s[[j]]] <- predict(boost.temp,newdata=train[s[[j]],])$class
+  }
+  boost.cv.err[i] <- mean(boost.pred!=train[,"y"])
+}
+
+# train and test errors
+for(i in 1:5){
+  boost.temp <- boosting(y~.,data=train,mfinal=n.trees[i])
+  boost.pred.train <- predict(boost.temp,newdata=train[,-1])$class
+  boost.pred.test <-  predict(boost.temp,newdata=test)$class
+  boost.train.err[i] <- mean(boost.pred.train!=train[,"y"])
+  boost.test.err[i] <- mean(boost.pred.test!=test[,"y"])
+}
+
+# Plot
+plot(n.trees,boost.cv.err,pch=19,col=2,ylim=c(0.01,0.15),ylab="Errors",
+     xlab="m",main="Boosting")
+points(n.trees,boost.train.err,pch=19,col=3)
+points(n.trees,boost.test.err,pch=19,col=4)
+legend("topright",legend=c("CV error","train error","test error"),
+       col=c(2:4),lty=1,lwd=2,cex=.8)
+
+```
+
+```{r,message=F,cache=T,eval=F}
+# training and test errors with the best number of trees
+n.trees[which.min(boost.cv.err)]
+boost.train.err[which.min(boost.cv.err)] # [1] 0
+boost.test.err[which.min(boost.cv.err)] # [1] 0.05660377
+
+```
+
+According to CV errors, the best number of trees is 150. Training and test errors with the best number of trees are 0 and 0.05660377, respectively. In this case, adaboost could be better than random forest. But, the speed of adaboost is very slow.
+
+
+
