@@ -1,2 +1,2 @@
 # financial_data_mining
-financial data mining assignments
+Here are some codes and documents for financial data mining assignments
