@@ -1,2 +1,2 @@
 # financial_data_mining
-financial data mining assignment
+financial data mining assignments
